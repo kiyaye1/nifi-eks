@@ -18,8 +18,6 @@ pipeline {
     K8S_APP_NAME  = "nifi"
   }
 
-  options { ansiColor('xterm') }
-
   stages {
     stage('Plan') {
       steps {
@@ -28,7 +26,6 @@ pipeline {
       }
     }
 
-    /* ===================== EKS INFRA ===================== */
     stage('Terraform: EKS up') {
       when { anyOf { expression { params.ACTION == 'eks_all' }; expression { params.ACTION == 'eks_up' } } }
       steps {
@@ -65,7 +62,6 @@ pipeline {
       }
     }
 
-    /* ===================== IMAGE BUILD ===================== */
     stage('Checkout NiFi source') {
       when { anyOf { expression { params.ACTION == 'eks_all' }; expression { params.ACTION == 'image_only' } } }
       steps {
@@ -124,24 +120,18 @@ pipeline {
       }
     }
 
-    /* ===================== K8S DEPLOY ===================== */
     stage('Deploy to EKS') {
       when { anyOf { expression { params.ACTION == 'eks_all' }; expression { params.ACTION == 'eks_deploy' } } }
       steps {
         sh '''
           set -e
-          # Ensure namespace
           kubectl apply -f k8s/namespace.yaml
-
-          # Render Deployment with the built image
           sed "s|__IMAGE__|$FULL_TAG|g" k8s/deployment.yaml | kubectl apply -f -
-
-          # Service (LoadBalancer)
           kubectl apply -f k8s/service.yaml
 
           echo "Waiting for EXTERNAL-IP..."
           for i in {1..60}; do
-            OUT=$(kubectl -n nifi get svc nifi -o jsonpath='{.status.loadBalancer.ingress[0].hostname]' 2>/dev/null || true)
+            OUT=$(kubectl -n nifi get svc nifi -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
             if [ -z "$OUT" ]; then
               OUT=$(kubectl -n nifi get svc nifi -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
             fi
