@@ -19,3 +19,7 @@ ENV NIFI_WEB_HTTP_PORT=8080
 EXPOSE 8080
 USER nifi
 ENTRYPOINT ["/opt/nifi/bin/nifi.sh", "run"]
+
+COPY start.sh /start.sh
+RUN chmod +x /start.sh
+ENTRYPOINT ["/start.sh"]
