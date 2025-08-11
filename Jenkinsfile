@@ -12,7 +12,7 @@ pipeline {
   }
 
   environment {
-    IMAGE_NAME    = "${params.DOCKERHUB_USER}/nifi-custom"
+    IMAGE_NAME    = "${params.DOCKERHUB_USER}/nifi-eks-custom"
     FULL_TAG      = "${IMAGE_NAME}:${params.IMAGE_TAG}"
     K8S_NAMESPACE = "nifi"
     K8S_APP_NAME  = "nifi"
