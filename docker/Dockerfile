@@ -21,14 +21,11 @@ ENV NIFI_HOME=/opt/nifi
 ENV PATH=$NIFI_HOME/bin:$PATH
 ENV NIFI_WEB_HTTP_PORT=8080
 
-# --- add start script while still root ---
 COPY start.sh /start.sh
 RUN chmod +x /start.sh
 
 EXPOSE 8080
 
-# drop privileges AFTER files are in place
 USER nifi
 
-# run our wrapper that enables HTTP:8080 then starts NiFi
 ENTRYPOINT ["/start.sh"]
