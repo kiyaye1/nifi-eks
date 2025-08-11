@@ -12,7 +12,7 @@ pipeline {
   }
 
   environment {
-    IMAGE_NAME    = "${params.DOCKERHUB_USER}/nifi-eks-custom"
+    IMAGE_NAME    = "${params.DOCKERHUB_USER}/nifi-custom"
     FULL_TAG      = "${IMAGE_NAME}:${params.IMAGE_TAG}"
     K8S_NAMESPACE = "nifi"
     K8S_APP_NAME  = "nifi"
@@ -34,11 +34,12 @@ pipeline {
       steps {
         dir('terraform') {
           withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: 'aws-creds']]) {
-            sh """
+            sh '''
+              set -e
               terraform -version
               terraform init -input=false
-              terraform apply -auto-approve -var=aws_region=${AWS_REGION}
-            """
+              terraform apply -auto-approve -var=aws_region=$AWS_REGION
+            '''
           }
         }
       }
@@ -54,11 +55,12 @@ pipeline {
       }
       steps {
         withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: 'aws-creds']]) {
-          sh """
+          sh '''
+            set -e
             CLUSTER_NAME=$(terraform -chdir=terraform output -raw cluster_name)
-            aws eks update-kubeconfig --name "$CLUSTER_NAME" --region ${AWS_REGION}
+            aws eks update-kubeconfig --name "$CLUSTER_NAME" --region "$AWS_REGION"
             kubectl version --short || true
-          """
+          '''
         }
       }
     }
@@ -67,12 +69,13 @@ pipeline {
     stage('Checkout NiFi source') {
       when { anyOf { expression { params.ACTION == 'eks_all' }; expression { params.ACTION == 'image_only' } } }
       steps {
-        sh """
+        sh '''
+          set -e
           rm -rf nifi
           git clone https://github.com/apache/nifi.git
           cd nifi
-          git checkout rel/nifi-${params.NIFI_VERSION}
-        """
+          git checkout rel/nifi-$NIFI_VERSION
+        '''
       }
     }
 
@@ -80,8 +83,11 @@ pipeline {
       when { anyOf { expression { params.ACTION == 'eks_all' }; expression { params.ACTION == 'image_only' } } }
       steps {
         dir('nifi/nifi-assembly') {
-          sh 'mvn -v'
-          sh 'mvn clean install -Passembly -DskipTests -U'
+          sh '''
+            set -e
+            mvn -v
+            mvn clean install -Passembly -DskipTests -U
+          '''
         }
       }
     }
@@ -92,7 +98,11 @@ pipeline {
         script {
           def zipFile = "nifi/nifi-assembly/target/nifi-${params.NIFI_VERSION}-bin.zip"
           if (!fileExists(zipFile)) error "NiFi ZIP not found at ${zipFile}"
-          sh "mkdir -p docker && cp ${zipFile} docker/"
+          sh '''
+            set -e
+            mkdir -p docker
+          '''
+          sh "cp ${zipFile} docker/"
         }
       }
     }
@@ -102,12 +112,13 @@ pipeline {
       steps {
         withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', usernameVariable: 'DH_USER', passwordVariable: 'DH_PASS')]) {
           dir('docker') {
-            sh """
-              docker version >/dev/null 2>/dev/null || { echo "Docker daemon unreachable"; exit 1; }
+            sh '''
+              set -e
+              docker version >/dev/null 2>&1 || { echo "Docker daemon unreachable"; exit 1; }
               echo "$DH_PASS" | docker login --username "$DH_USER" --password-stdin
-              docker build --build-arg NIFI_ZIP=nifi-${NIFI_VERSION}-bin.zip -t $FULL_TAG .
+              docker build --build-arg NIFI_ZIP=nifi-$NIFI_VERSION-bin.zip -t $FULL_TAG .
               docker push $FULL_TAG
-            """
+            '''
           }
         }
       }
@@ -117,7 +128,8 @@ pipeline {
     stage('Deploy to EKS') {
       when { anyOf { expression { params.ACTION == 'eks_all' }; expression { params.ACTION == 'eks_deploy' } } }
       steps {
-        sh """
+        sh '''
+          set -e
           # Ensure namespace
           kubectl apply -f k8s/namespace.yaml
 
@@ -129,15 +141,18 @@ pipeline {
 
           echo "Waiting for EXTERNAL-IP..."
           for i in {1..60}; do
-            OUT=$(kubectl -n nifi get svc nifi -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
+            OUT=$(kubectl -n nifi get svc nifi -o jsonpath='{.status.loadBalancer.ingress[0].hostname]' 2>/dev/null || true)
             if [ -z "$OUT" ]; then
               OUT=$(kubectl -n nifi get svc nifi -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
             fi
-            [ -n "$OUT" ] && { echo "NiFi URL: http://$OUT:8080/nifi"; exit 0; }
+            if [ -n "$OUT" ]; then
+              echo "NiFi URL: http://$OUT:8080/nifi"
+              exit 0
+            fi
             sleep 10
           done
           echo "LoadBalancer not ready yet. Check later with: kubectl -n nifi get svc nifi"
-        """
+        '''
       }
     }
 
@@ -146,7 +161,11 @@ pipeline {
       steps {
         dir('terraform') {
           withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: 'aws-creds']]) {
-            sh "terraform init -input=false && terraform destroy -auto-approve -var=aws_region=${AWS_REGION}"
+            sh '''
+              set -e
+              terraform init -input=false
+              terraform destroy -auto-approve -var=aws_region=$AWS_REGION
+            '''
           }
         }
       }
