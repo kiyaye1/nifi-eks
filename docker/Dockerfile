@@ -7,7 +7,7 @@ RUN mkdir -p /opt/nifi && unzip /tmp/${NIFI_ZIP} -d /opt && mv /opt/nifi-*/* /op
 ENV NIFI_HOME=/opt/nifi
 ENV PATH=$NIFI_HOME/bin:$PATH
 ENV NIFI_WEB_HTTP_PORT=8080
-COPY start.sh /start.sh
+COPY docker/start.sh /start.sh
 RUN chmod +x /start.sh
 EXPOSE 8080
 USER nifi
