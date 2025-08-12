@@ -1,0 +1,18 @@
+---
+- name: Deploy NiFi to EKS with kubectl
+  hosts: local
+  gather_facts: no
+  vars:
+    namespace: "nifi"
+    image: ""
+  tasks:
+    - name: Ensure namespace exists
+      command: kubectl apply -f k8s/namespace.yaml
+      args: { chdir: "{{ playbook_dir }}/.." }
+
+    - name: Apply manifests
+      command: kubectl apply -f k8s/
+      args: { chdir: "{{ playbook_dir }}/.." }
+
+    - name: Set deployment image
+      command: kubectl -n {{ namespace }} set image deployment/nifi nifi={{ image }} --record

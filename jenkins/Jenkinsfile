@@ -1,0 +1,103 @@
+pipeline {
+  agent any
+
+  parameters {
+    choice(name: 'ACTION', choices: ['all','down'], description: 'all = provision+build+deploy, down = destroy')
+    string(name: 'AWS_REGION', defaultValue: 'us-east-2', description: 'AWS region')
+    string(name: 'CLUSTER_NAME', defaultValue: 'nifi-eks', description: 'EKS cluster name')
+    string(name: 'K8S_VERSION', defaultValue: '1.30', description: 'EKS Kubernetes version')
+    string(name: 'NODE_INSTANCE_TYPE', defaultValue: 't3.large', description: 'Node instance type')
+    string(name: 'NODE_DESIRED', defaultValue: '2', description: 'Node desired size')
+    string(name: 'DOCKERHUB_USER', defaultValue: 'yourdockeruser', description: 'Docker Hub username')
+    string(name: 'IMAGE_TAG', defaultValue: '1.26.0', description: 'Docker image tag')
+    string(name: 'NIFI_VERSION', defaultValue: '1.26.0', description: 'NiFi version')
+  }
+
+  environment {
+    AWS_DEFAULT_REGION = "${params.AWS_REGION}"
+    IMAGE_NAME = "${params.DOCKERHUB_USER}/nifi-custom"
+    FULL_TAG   = "${IMAGE_NAME}:${params.IMAGE_TAG}"
+  }
+
+  stages {
+    stage('Clean') { steps { cleanWs() } }
+    stage('Checkout') { steps { checkout scm } }
+
+    stage('Terraform Apply (EKS)') {
+      when { expression { return params.ACTION == 'all' } }
+      steps {
+        withCredentials([usernamePassword(credentialsId: 'aws-creds', usernameVariable: 'AWS_ACCESS_KEY_ID', passwordVariable: 'AWS_SECRET_ACCESS_KEY')]) {
+          dir('terraform') {
+            sh '''
+              set -e
+              terraform init -input=false
+              terraform apply -auto-approve                 -var=aws_region=${AWS_REGION}                 -var=cluster_name=${CLUSTER_NAME}                 -var=kubernetes_version=${K8S_VERSION}                 -var=node_instance_type=${NODE_INSTANCE_TYPE}                 -var=node_desired_size=${NODE_DESIRED}
+            '''
+          }
+        }
+      }
+    }
+
+    stage('Build & Push Image to Docker Hub') {
+      when { expression { return params.ACTION == 'all' } }
+      steps {
+        withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+          sh '''
+            set -e
+            ZIP="nifi-${NIFI_VERSION}-bin.zip"
+            URL="https://archive.apache.org/dist/nifi/${NIFI_VERSION}/${ZIP}"
+            echo "Downloading NiFi: $URL"
+            curl -fsSL -o "$ZIP" "$URL"
+
+            echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+            docker build --build-arg NIFI_ZIP="nifi-${NIFI_VERSION}-bin.zip" -t "${FULL_TAG}" -f docker/Dockerfile .
+            docker push "${FULL_TAG}"
+            echo "${FULL_TAG}" > image.txt
+          '''
+        }
+      }
+    }
+
+    stage('Deploy to EKS') {
+      when { expression { return params.ACTION == 'all' } }
+      steps {
+        withCredentials([usernamePassword(credentialsId: 'aws-creds', usernameVariable: 'AWS_ACCESS_KEY_ID', passwordVariable: 'AWS_SECRET_ACCESS_KEY')]) {
+          sh '''
+            set -e
+            aws eks update-kubeconfig --region ${AWS_REGION} --name ${CLUSTER_NAME}
+            IMG="$(cat image.txt)"
+            ansible-playbook -i ansible/inventory.ini ansible/deploy.yml -e "image=${IMG} namespace=nifi"
+            bash scripts/wait-for-elb.sh nifi nifi | tee nifi-url.txt
+          '''
+        }
+      }
+    }
+
+    stage('Destroy (EKS down)') {
+      when { expression { return params.ACTION == 'down' } }
+      steps {
+        withCredentials([usernamePassword(credentialsId: 'aws-creds', usernameVariable: 'AWS_ACCESS_KEY_ID', passwordVariable: 'AWS_SECRET_ACCESS_KEY')]) {
+          dir('terraform') {
+            sh '''
+              set -e
+              terraform init -input=false
+              terraform destroy -auto-approve -var=aws_region=${AWS_REGION} -var=cluster_name=${CLUSTER_NAME}
+            '''
+          }
+        }
+      }
+    }
+  }
+
+  post {
+    success {
+      script {
+        if (params.ACTION == 'all') {
+          echo "Done. NiFi URL (also saved to nifi-url.txt):"
+          sh 'cat nifi-url.txt || true'
+        } else { echo "Done."; }
+      }
+    }
+    failure { echo "Pipeline failed." }
+  }
+}
