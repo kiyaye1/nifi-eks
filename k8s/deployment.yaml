@@ -15,29 +15,17 @@ spec:
     spec:
       containers:
         - name: nifi
-          image: __IMAGE__
-          imagePullPolicy: IfNotPresent
+          image: REPLACED_BY_JENKINS
           ports:
             - containerPort: 8080
-          env:
-            - name: NIFI_WEB_HTTP_PORT
-              value: "8080"
           readinessProbe:
-            httpGet:
-              path: /nifi/
-              port: 8080
-            initialDelaySeconds: 20
+            httpGet: { path: /nifi/, port: 8080 }
+            initialDelaySeconds: 25
             periodSeconds: 10
           livenessProbe:
-            httpGet:
-              path: /nifi/
-              port: 8080
+            httpGet: { path: /nifi/, port: 8080 }
             initialDelaySeconds: 60
             periodSeconds: 20
           resources:
-            requests:
-              cpu: "250m"
-              memory: "512Mi"
-            limits:
-              cpu: "1"
-              memory: "1Gi"
+            requests: { cpu: "250m", memory: "512Mi" }
+            limits:   { cpu: "1",    memory: "1Gi" }
