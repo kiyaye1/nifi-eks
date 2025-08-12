@@ -1,40 +1,22 @@
-# NiFi on EKS — One Jenkinsfile Repo
+# NiFi on EKS 
 
-This repo lets you:
-- Create an **EKS** cluster (Kubernetes **1.33**) in your default VPC.
-- Build & push a **Docker** image of **Apache NiFi**.
-- Deploy NiFi to the cluster with a `LoadBalancer` Service.
+This repo always:
+1. Provisions **EKS** (default VPC + public subnets) with Terraform.
+2. Builds a **NiFi** Docker image and **pushes to Docker Hub**.
+3. Deploys to Kubernetes via **Ansible**.
+4. Prints the public **NiFi URL** when done.
 
-## Structure
-```
-.
-├─ Jenkinsfile
-├─ terraform/
-│  ├─ versions.tf
-│  └─ main.tf
-├─ k8s/
-│  ├─ namespace.yaml
-│  ├─ deployment.yaml
-│  └─ service.yaml
-└─ docker/
-   ├─ Dockerfile
-   └─ .dockerignore
-```
+## Jenkins usage
 
-## Jenkins prerequisites
-Install on the Jenkins agent: **Terraform**, **AWS CLI v2**, **kubectl**, **Maven**, **Docker**.
+Create two credentials:
+- `aws-creds` — *Username:* AWS Access Key ID, *Password:* AWS Secret Access Key
+- `dockerhub-creds` — *Username:* Docker Hub user, *Password:* Docker Hub password 
 
-Create credentials:
-- `aws-creds` — AWS access key/secret with EKS/EC2/IAM permissions.
-- `dockerhub-creds` — Docker Hub username/password.
+Run the Pipeline with:
+- `ACTION = all` (provision + build + push + deploy), or `ACTION = down` (destroy).
 
-## Pipeline parameters
-- `ACTION` — `eks_all` (infra+image+deploy), `eks_up`, `eks_deploy`, `image_only`, `eks_down`
-- `NIFI_VERSION` — default `1.26.0`
-- `DOCKERHUB_USER` — your Docker Hub username
-- `IMAGE_TAG` — tag to push/deploy
-- `AWS_REGION` — default `us-east-2`
+params:
+- `AWS_REGION`, `CLUSTER_NAME`, `K8S_VERSION`, `NODE_INSTANCE_TYPE`, `NODE_DESIRED`
+- `DOCKERHUB_USER`, `IMAGE_TAG`, `NIFI_VERSION`
 
-## Run
-- **First time**: Run with `ACTION=eks_all`. On success you’ll see a URL like `http://<elb-host-or-ip>:8080/nifi`.
-- **Later**: Use `eks_deploy` to redeploy new images, `image_only` to just build/push, or `eks_down` to destroy infra.
+NiFi will be reachable at: `http://<elb-dns>:8080/nifi`
