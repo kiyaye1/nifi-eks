@@ -1,3 +1,4 @@
+# k8s/deployment.yaml
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -15,17 +16,32 @@ spec:
     spec:
       containers:
         - name: nifi
-          image: REPLACED_BY_JENKINS
+          image: kiyaye1/nifi-custom:1.26.0
           ports:
             - containerPort: 8080
+          env:
+            - name: NIFI_WEB_HTTP_PORT
+              value: "8080"
           readinessProbe:
-            httpGet: { path: /nifi/, port: 8080 }
-            initialDelaySeconds: 25
+            httpGet:
+              path: /nifi/
+              port: 8080
+            initialDelaySeconds: 40
             periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 10
           livenessProbe:
-            httpGet: { path: /nifi/, port: 8080 }
-            initialDelaySeconds: 60
+            httpGet:
+              path: /nifi/
+              port: 8080
+            initialDelaySeconds: 90
             periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 6
           resources:
-            requests: { cpu: "250m", memory: "512Mi" }
-            limits:   { cpu: "1",    memory: "1Gi" }
+            requests:
+              cpu: "500m"
+              memory: "2Gi"
+            limits:
+              cpu: "2"
+              memory: "3Gi"
